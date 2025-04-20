@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # --- 모델 설정 ---
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIMENSIONS: Optional[int] = 512 # text-embedding-3용 차원 (None이면 기본값)
-    LLM_MODEL: str = "gpt-4o-mini" # 메인 답변 생성 모델
+    LLM_MODEL: str = "gpt-4o-mini"
 
     # --- 데이터 경로 ---
     FAQ_DATA_PATH: str = "data/final_result.pkl" # 원본 데이터 경로
@@ -45,12 +45,12 @@ class Settings(BaseSettings):
     GENERATOR_TEMPERATURE: float = 0.7 # 답변 생성 온도
 
     # --- Guard 설정 ---
-    GUARD_CLASSIFIER_MODEL: str = "gpt-3.5-turbo" # 도메인 분류기 모델 (저렴한 모델 추천)
+    GUARD_CLASSIFIER_MODEL: str = "gpt-4o-mini" 
 
     # --- Tiered Logic Thresholds ---
-    HIGH_THRESHOLD: float = 0.88   # 높은 유사도 기준 (직접 답변 유도)
-    MEDIUM_THRESHOLD: float = 0.75 # 중간 유사도 기준 (표준 RAG)
-    LARGE_GAP_THRESHOLD: float = 0.1 # Top1 vs Top2 유사도 차이 기준 (신뢰도)
+    HIGH_THRESHOLD: float = 0.7   # 높은 유사도 기준 (직접 답변 유도)
+    MEDIUM_THRESHOLD: float = 0.5 # 중간 유사도 기준 (표준 RAG)
+    LARGE_GAP_THRESHOLD: float = 0.04 # Top1 vs Top2 유사도 차이 기준 (신뢰도)
 
     # --- Memory 설정 ---
     CONTEXT_TURNS: int = 3 # 프롬프트에 포함할 최근 대화 턴 수
