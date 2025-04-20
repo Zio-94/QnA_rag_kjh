@@ -18,7 +18,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
 # --- 설정 및 모듈 임포트 ---
-from src.core.config import settings # 수정: 앱 설정 사용
+from src.core.config import settings 
 from src.modules.embedder import Embedder
 from src.modules.vector_store import VectorStore
 # BM25 라이브러리 임포트
@@ -176,7 +176,10 @@ class DataIngestionService:
                     if overwrite:
                         logger.warning(f"Collection '{col_name}' exists. Deleting for overwrite.")
                         await self.vector_store.delete_collection(col_name)
-                        await self.vector_store.get_or_create_collection(col_name)
+                        await self.vector_store.get_or_create_collection(
+                            col_name, 
+                            metadata={"hnsw:space": "cosine"}
+                        )
                     else:
                         logger.info(f"Collection '{col_name}' exists and overwrite is False. Skipping vector ingestion for this collection.")
                         # 이미 존재하는 컬렉션은 건너뛰도록 플래그 설정 등 가능
@@ -227,6 +230,7 @@ class DataIngestionService:
                 "metadata": {
                     "source_faq_id": faq_id,
                     "original_question": original_question,
+                    "answered_text": cleaned_answer
                 }
             })
 

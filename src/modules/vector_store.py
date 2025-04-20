@@ -43,11 +43,11 @@ class VectorStore:
             logger.error(f"Error checking if collection '{name}' exists: {e}")
             return False # 오류 발생 시 없다고 가정
 
-    async def get_or_create_collection(self, name: str) -> Collection:
+    async def get_or_create_collection(self, name: str, metadata: Optional[Dict[str, Any]] = None) -> Collection:
         """컬렉션을 가져오거나 없으면 생성합니다 (비동기)."""
         def _sync_get_or_create():
             # get_or_create_collection은 메타데이터, 임베딩 함수 등 추가 인자 가능
-            return self.client.get_or_create_collection(name=name)
+            return self.client.get_or_create_collection(name=name, metadata=metadata)
         try:
             logger.info(f"Getting or creating collection: {name}")
             collection = await asyncio.to_thread(_sync_get_or_create)
@@ -162,7 +162,7 @@ class VectorStore:
             return [] # 오류 시 빈 리스트 반환
 
     async def get_documents_by_ids(
-        self, collection_name: str, ids: List[str]
+        self, collection_name: str, ids: List[str], include: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """ID 목록으로 문서를 가져옵니다 (비동기)."""
         if not ids: return []
@@ -171,7 +171,7 @@ class VectorStore:
             def _sync_get():
                 results: GetResult = collection.get(
                     ids=ids,
-                    include=["metadatas", "documents"]
+                    include=include
                 )
                 return results
 
