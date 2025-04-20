@@ -180,63 +180,73 @@ class Retriever:
             return []
 
     async def _get_context_for_faqs(self, faq_ids: List[str]) -> Dict[str, Dict[str, Any]]:
-        """선택된 FAQ ID에 대한 컨텍스트(원본 질문, 답변 청크) 조회"""
-        if not faq_ids: return {}
-
-        logger.info(f"Fetching context for {len(faq_ids)} selected FAQs...")
+        """
+        선택된 FAQ ID 목록을 사용하여 Q&A 쌍 컬렉션에서
+        원본 질문과 답변 텍스트(메타데이터에 저장됨)를 조회합니다. 
+        """
+        if not faq_ids:
+            return {}
+        logger.info(f"Fetching context (question & answered_text) for {len(faq_ids)} FAQs from '{self.qna_pair_collection}'...")
         context_map: Dict[str, Dict[str, Any]] = {}
-
-        # VectorStore에서 메타데이터 필터링을 사용하여 해당 FAQ의 모든 청크 조회
-        # 주의: 많은 FAQ ID에 대해 개별 쿼리 대신 batch get 또는 필터링 효율적 활용 필요
-        # 예시: ChromaDB의 where 필터 사용 {"source_faq_id": {"$in": faq_ids}}
-        # 현재 VectorStore 래퍼에 해당 기능 구현 필요
-
-        # 임시 방편: 각 FAQ ID별로 청크 검색 (비효율적)
-        # 또는 Q&A Pair 컬렉션에서 해당 FAQ ID의 메타데이터 조회
         try:
-            # Q&A 쌍 컬렉션에서 ID로 메타데이터 가져오기 시도
-            qna_docs = await self.vector_store.get_documents_by_ids(
-                collection_name=self.qna_pair_collection, ids=faq_ids
+            # VectorStore에서 ID 목록으로 메타데이터 조회 (include 사용)
+            # 반환 타입이 List[Dict[str, Any]] 또는 None 이라고 가정
+            retrieved_docs: Optional[List[Dict[str, Any]]] = await self.vector_store.get_documents_by_ids(
+                collection_name=self.qna_pair_collection,
+                ids=faq_ids,
+                include=["metadatas"] # 메타데이터만 필요함을 명시
             )
-            for doc in qna_docs:
-                 faq_id = doc.get('metadata', {}).get('source_faq_id')
-                 if faq_id:
-                      context_map[faq_id] = {
-                           "original_question": doc.get('metadata', {}).get('original_question', ''),
-                           # "answer_text": doc.get('metadata', {}).get('cleaned_answer', '') # 답변 전체 저장 시
-                           "answer_chunks": [] # 답변 청크는 별도로 가져와야 함
-                      }
 
-            # 답변 청크 가져오기 (BM25 코퍼스 맵 활용 또는 VectorStore 필터링)
-            # 여기서는 BM25 맵 활용 예시 (모든 청크 텍스트를 저장하지 않았으므로 한계 있음)
-            # 이상적: VectorStore에서 where={"source_faq_id": faq_id} 로 검색
-            if self.bm25_corpus_map:
-                 for corpus_idx, info in self.bm25_corpus_map.items():
-                      faq_id = info.get("source_faq_id")
-                      if faq_id in context_map:
-                           # bm25_corpus_map에는 텍스트가 없음. VectorStore에서 가져와야 함.
-                           # 임시로 청크 ID만 저장
-                           context_map[faq_id]["answer_chunks"].append(info.get("chunk_id"))
-                           # TODO: 실제 청크 텍스트를 VectorStore에서 조회하는 로직 추가
+            # 결과가 None이거나 비어있는 리스트일 경우 처리
+            if not retrieved_docs:
+                 logger.warning(f"Could not retrieve any documents for the provided faq_ids: {faq_ids}")
+                 return {} # 빈 딕셔너리 반환
 
-            # 실제 구현: VectorStore에 메타데이터 필터링 기능 추가 후 아래와 같이 사용
-            # chunks = await self.vector_store.search_with_filter(
-            #     collection_name=ANSWER_CHUNK_COLLECTION_NAME, # 답변 청크 컬렉션 필요
-            #     filter_metadata={"source_faq_id": {"$in": faq_ids}},
-            #     k=100 # 충분히 많은 수
-            # )
-            # for chunk in chunks:
-            #     faq_id = chunk.get('metadata', {}).get('source_faq_id')
-            #     if faq_id in context_map:
-            #         context_map[faq_id]["answer_chunks"].append(chunk.get('document'))
+            # 이제 retrieved_docs는 List[Dict] 형태임
+            found_ids = set()
+            for doc_data in retrieved_docs:
+                 # 각 딕셔너리에서 'id'와 'metadata' 추출 시도
+                 faq_id = doc_data.get('id')
+                 metadata = doc_data.get('metadata')
 
-            logger.info(f"Context fetched for {len(context_map)} FAQs.")
+                 if not faq_id:
+                     logger.warning(f"Retrieved document data is missing 'id': {doc_data}")
+                     continue # ID 없으면 처리 불가
+
+                 found_ids.add(faq_id) # 찾은 ID 기록
+
+                 # 메타데이터 유효성 검사 및 필요한 정보 추출
+                 if metadata and isinstance(metadata, dict):
+                     original_question = metadata.get('original_question')
+                     answered_text = metadata.get('answered_text') # 메타데이터에서 답변 추출
+
+                     if original_question and answered_text:
+                          context_map[faq_id] = {
+                               "original_question": original_question,
+                               "answered_text": answered_text # 전체 답변 텍스트
+                          }
+                     else:
+                          # 메타데이터는 있지만 필요한 키가 없는 경우
+                          missing_keys = []
+                          if not original_question: missing_keys.append("'original_question'")
+                          if not answered_text: missing_keys.append("'answered_text'")
+                          logger.warning(f"Metadata for faq_id '{faq_id}' is missing required keys: {', '.join(missing_keys)}")
+                 else:
+                     # 메타데이터 자체가 없거나 형식이 잘못된 경우
+                     logger.warning(f"Missing or invalid metadata for faq_id: '{faq_id}'. Found: {metadata}")
+
+            # 요청한 ID 중 일부를 찾지 못했을 경우 로그 (선택 사항)
+            missing_ids = set(faq_ids) - found_ids
+            if missing_ids:
+                logger.warning(f"Could not find metadata for some requested FAQ IDs: {missing_ids}")
 
         except Exception as e:
-            logger.error(f"Error fetching context for FAQs: {e}")
+            # Vector Store 통신 오류 등 예외 처리
+            logger.exception(f"Error fetching or processing context for FAQs: {e}") # exception으로 스택 트레이스 포함
+            context_map = {} # 오류 발생 시 안전하게 빈 딕셔너리 반환
 
+        logger.info(f"Context fetched for {len(context_map)} out of {len(faq_ids)} requested FAQs.")
         return context_map
-
 
     async def retrieve_and_fuse(self, query: str) -> Tuple[List[Tuple[str, float]], float, float]:
         """
@@ -297,9 +307,52 @@ class Retriever:
 
 
         return final_list, top1_similarity, top2_similarity
-
-
+    
     async def retrieve(self, query: str) -> List[Dict[str, Any]]:
+        """
+        최종 사용자 대상 메서드: 쿼리를 받아 검색/융합 후
+        선택된 FAQ에 대한 컨텍스트(원본 질문, 원본 답변 텍스트)를 반환합니다.
+        """
+        # 1. 검색 및 융합하여 최종 FAQ ID 목록과 점수, 유사도 정보 얻기
+        ranked_faq_ids_with_scores, top1_sim, top2_sim = await self.retrieve_and_fuse(query)
+        if not ranked_faq_ids_with_scores:
+             logger.warning(f"Retrieve_and_fuse returned no ranked FAQs for query: {query[:50]}...")
+             return []
+
+        final_faq_ids = [faq_id for faq_id, score in ranked_faq_ids_with_scores]
+
+        # 2. 선택된 FAQ ID에 대한 컨텍스트 조회 
+        context_map = await self._get_context_for_faqs(final_faq_ids)
+
+
+        final_context_list = []
+        for faq_id, rrf_score in ranked_faq_ids_with_scores:
+             if faq_id in context_map:
+                  # context_map에서 해당 FAQ의 정보 가져오기
+                  faq_context = context_map[faq_id]
+                  # 최종 반환 리스트에 필요한 정보만 담아서 추가
+                  context_entry = {
+                      "source_faq_id": faq_id,
+                      "original_question": faq_context.get("original_question", "N/A"),
+                      "answered_text": faq_context.get("answered_text", "N/A"), # 전체 답변 텍스트
+                      "rrf_score": rrf_score,
+                      # 디버그 정보는 첫 번째 항목에만 추가 (선택적)
+                      "debug_info": {}
+                  }
+                  if not final_context_list: # 첫 번째 항목일 경우
+                       context_entry["debug_info"] = {
+                           'top1_sim_qna': top1_sim,
+                           'top2_sim_qna': top2_sim,
+                           'gap_qna': top1_sim - top2_sim
+                       }
+                  final_context_list.append(context_entry)
+             else:
+                  # 컨텍스트 조회 실패 시 로그만 남기고 해당 FAQ는 결과에서 제외
+                  logger.warning(f"Context could not be fetched for ranked FAQ ID: {faq_id}. Skipping.")
+
+
+        logger.info(f"Returning {len(final_context_list)} final contexts for LLM.")
+        return final_context_list
         # 1. 검색 및 융합 (이제 유사도 정보도 함께 받음)
         ranked_faq_ids_with_scores, top1_sim, top2_sim = await self.retrieve_and_fuse(query) # 반환값 받기
         if not ranked_faq_ids_with_scores:
