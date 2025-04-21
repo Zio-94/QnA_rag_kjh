@@ -185,6 +185,7 @@ class DataIngestionService:
                         return
                 else:
                     await self.vector_store.get_or_create_collection(col_name)
+                    return
             logger.info("Vector collections prepared.")
         except Exception as e:
             logger.critical(f"Failed to prepare vector collections: {e}")

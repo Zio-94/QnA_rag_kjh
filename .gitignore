@@ -35,7 +35,7 @@ var/
 # Data and model files
 
 models/
-chroma_db/
+
 
 # Logs
 logs/
