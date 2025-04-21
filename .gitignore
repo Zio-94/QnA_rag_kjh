@@ -33,8 +33,7 @@ var/
 .env.local
 
 # Data and model files
-*.pkl
-data/
+
 models/
 chroma_db/
 

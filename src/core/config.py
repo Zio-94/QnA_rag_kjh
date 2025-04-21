@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # --- 모델 설정 ---
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIMENSIONS: Optional[int] = 512 # text-embedding-3용 차원 (None이면 기본값)
-    LLM_MODEL: str = "gpt-o4-nano"
+    LLM_MODEL: str 
 
     # --- 데이터 경로 ---
     FAQ_DATA_PATH: str = "data/final_result.pkl" # 원본 데이터 경로
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     GENERATOR_TEMPERATURE: float = 0.7 # 답변 생성 온도
 
     # --- Guard 설정 ---
-    GUARD_CLASSIFIER_MODEL: str = "gpt-o4-nano" 
+    GUARD_CLASSIFIER_MODEL: str 
 
     # --- Tiered Logic Thresholds ---
     HIGH_THRESHOLD: float = 0.7   # 높은 유사도 기준 (직접 답변 유도)

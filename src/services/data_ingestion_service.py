@@ -182,7 +182,7 @@ class DataIngestionService:
                         )
                     else:
                         logger.info(f"Collection '{col_name}' exists and overwrite is False. Skipping vector ingestion for this collection.")
-                        # 이미 존재하는 컬렉션은 건너뛰도록 플래그 설정 등 가능
+                        return
                 else:
                     await self.vector_store.get_or_create_collection(col_name)
             logger.info("Vector collections prepared.")
