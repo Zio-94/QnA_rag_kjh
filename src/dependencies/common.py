@@ -18,6 +18,7 @@ from src.modules.retriever import Retriever
 from src.services.chat_service import ChatService
 from src.modules.query_analyzer import QueryAnalyzer
 from src.services.data_ingestion_service import DataIngestionService
+from src.modules.memory import ConversationMemory
 # from ..services.vector_service import DataIngestionService # lifespan에서만 직접 사용 가정
 
 logger = logging.getLogger(__name__)
@@ -74,18 +75,17 @@ def get_vector_store() -> VectorStore:
 #         logger.error(f"Failed to initialize ReRanker, disabling: {e}")
 #         return None # 실패 시 None 반환
 
-# @lru_cache(maxsize=None)
-# def get_memory(
-#     settings: Annotated[Settings, Depends(get_settings)] = Depends(get_settings),
-#     redis_client: Annotated[redis.Redis, Depends(get_redis_client)] = Depends(get_redis_client)
-# ) -> ConversationMemory:
-#     """ConversationMemory 인스턴스를 반환합니다 (캐싱됨)."""
-#     logger.debug("Getting ConversationMemory instance...")
-#     try:
-#         return ConversationMemory(redis_client=redis_client, ttl_seconds=settings.REDIS_TTL_SECONDS)
-#     except Exception as e:
-#         logger.critical(f"Failed to initialize ConversationMemory: {e}")
-#         raise
+@lru_cache(maxsize=None)
+def get_memory(
+    redis_client: redis.Redis = Depends(get_redis_client)
+) -> ConversationMemory:
+    """ConversationMemory 인스턴스를 반환합니다 (캐싱됨)."""
+    logger.debug("Getting ConversationMemory instance...")
+    try:
+        return ConversationMemory(redis_client=redis_client, ttl_seconds=settings.REDIS_TTL_SECONDS)
+    except Exception as e:
+        logger.critical(f"Failed to initialize ConversationMemory: {e}")
+        raise
 
 @lru_cache(maxsize=None)
 def get_guard() -> Guard:
@@ -152,7 +152,8 @@ def get_chat_service(
     retriever: Retriever = Depends(get_retriever),
     generator: ChatGenerator = Depends(get_generator),
     guard: Guard = Depends(get_guard),
-    query_analyzer: QueryAnalyzer = Depends(get_query_analyzer)
+    query_analyzer: QueryAnalyzer = Depends(get_query_analyzer),
+    memory: ConversationMemory = Depends(get_memory)
 ) -> ChatService:
     """ChatService 인스턴스를 반환합니다 (캐싱됨)."""
     logger.debug("Getting ChatService instance...")
@@ -161,8 +162,8 @@ def get_chat_service(
             retriever=retriever,
             generator=generator,
             guard=guard,
-            query_analyzer=query_analyzer
-            # memory=memory
+            query_analyzer=query_analyzer,
+            memory=memory
             # 필요시 settings=settings 전달
         )
     except Exception as e:

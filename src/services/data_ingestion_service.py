@@ -29,7 +29,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_TOKENIZER_MODEL = "gpt-4o-mini"
+DEFAULT_TOKENIZER_MODEL = "cl100k_base"
 DEFAULT_CHUNK_SIZE = 350
 DEFAULT_CHUNK_OVERLAP = 50
 INGESTION_BATCH_SIZE = 64

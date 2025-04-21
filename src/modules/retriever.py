@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # --- RRF 구현 함수 ---
 def reciprocal_rank_fusion(
     results_list: List[List[Tuple[str, float]]], # [(id, score), ...] 리스트의 리스트
-    k: int = 60 # RRF 랭크 가중치 파라미터 (조정 가능)
+    k: int = 35 # RRF 랭크 가중치 파라미터 (조정 가능)
 ) -> Dict[str, float]:
     """
     여러 검색 결과 목록을 RRF로 융합합니다.
@@ -43,6 +43,40 @@ def reciprocal_rank_fusion(
             # RRF 점수 계산: 1 / (k + rank)
             rrf_score = 1.0 / (k + rank)
             # 기존 점수에 합산 (동일 ID가 여러 리스트에 나타날 수 있음)
+            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + rrf_score
+
+    return rrf_scores
+
+def weighted_reciprocal_rank_fusion(
+    results_list: List[List[Tuple[str, float]]],  # [(id, score), ...] 리스트의 리스트
+    k: int = 60,
+    weights: Optional[List[float]] = None  # 각 결과 리스트에 대한 가중치 리스트
+) -> Dict[str, float]:
+    """
+    가중치를 적용한 Reciprocal Rank Fusion (WRRF) 함수.
+    
+    :param results_list: 각 검색 시스템의 결과 리스트 [(id, score), ...]
+    :param k: RRF 랭크 보정 파라미터
+    :param weights: 각 검색기 결과에 대한 가중치 리스트. 생략 시 동일 가중치(1.0)로 처리
+    :return: {문서 ID: 융합된 RRF 점수}
+    """
+    if not results_list:
+        return {}
+
+    num_sources = len(results_list)
+    if weights is None:
+        weights = [1.0] * num_sources
+    elif len(weights) != num_sources:
+        raise ValueError("weights 길이와 results_list의 길이가 같아야 합니다.")
+
+    rrf_scores: Dict[str, float] = {}
+
+    for source_idx, results in enumerate(results_list):
+        if not results:
+            continue
+        weight = weights[source_idx]
+        for rank, (doc_id, _) in enumerate(results, 1):
+            rrf_score = weight / (k + rank)
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + rrf_score
 
     return rrf_scores
@@ -105,8 +139,6 @@ class Retriever:
             query_embedding=query_embedding,
             k=self.top_k_vector_search
         )
-        # 결과 형식: (faq_id, score) - score는 유사도 (1 - distance) 로 변환 가정
-        # ChromaDB는 distance 반환 -> 유사도로 변환 필요
         question_results = []
         for res in results:
             faq_id = res.get('metadata', {}).get('source_faq_id')
@@ -275,12 +307,13 @@ class Retriever:
         # Top-1/Top-2 유사도 추출 (QnA 쌍 검색 결과 기준)
         top1_similarity = 0.0
         top2_similarity = 0.0
-        if qna_pair_results:
+        compare_results = qna_pair_results
+        if compare_results:
             # qna_pair_results는 (faq_id, similarity) 튜플 리스트 (점수 높은 순)
-            if len(qna_pair_results) > 0:
-                top1_similarity = qna_pair_results[0][1]
-            if len(qna_pair_results) > 1:
-                top2_similarity = qna_pair_results[1][1]
+            if len(compare_results) > 0:
+                top1_similarity = compare_results[0][1]
+            if len(compare_results) > 1:
+                top2_similarity = compare_results[1][1]
         logger.info(f"Top QnA Pair Similarities: Top1={top1_similarity:.4f}, Top2={top2_similarity:.4f}")
 
 
@@ -298,7 +331,9 @@ class Retriever:
             return [], 0.0, 0.0
 
         logger.info(f"Applying RRF fusion to {len(valid_results)} result lists...")
-        fused_scores = reciprocal_rank_fusion(valid_results, k=self.rrf_k)
+        # fused_scores = reciprocal_rank_fusion(valid_results, k=self.rrf_k)
+        weights = [0.8, 1.0, 0.4] # 각 검색 시스템에 대한 가중치 리스트
+        fused_scores = weighted_reciprocal_rank_fusion(valid_results, k=self.rrf_k, weights=weights)
         final_ranked_faqs = sorted(fused_scores.items(), key=lambda item: item[1], reverse=True)
         logger.info(f"Fusion resulted in {len(final_ranked_faqs)} ranked FAQs.")
 
@@ -352,30 +387,4 @@ class Retriever:
 
 
         logger.info(f"Returning {len(final_context_list)} final contexts for LLM.")
-        return final_context_list
-        # 1. 검색 및 융합 (이제 유사도 정보도 함께 받음)
-        ranked_faq_ids_with_scores, top1_sim, top2_sim = await self.retrieve_and_fuse(query) # 반환값 받기
-        if not ranked_faq_ids_with_scores:
-             return []
-
-        final_faq_ids = [faq_id for faq_id, score in ranked_faq_ids_with_scores]
-
-        # 2. 선택된 FAQ ID에 대한 컨텍스트 조회
-        context_map = await self._get_context_for_faqs(final_faq_ids)
-
-        # 3. 최종 결과 조합 (Top-1/Top-2 유사도 정보 추가)
-        final_context_list = []
-        for faq_id, score in ranked_faq_ids_with_scores:
-             if faq_id in context_map:
-                  context = context_map[faq_id]
-                  context['rrf_score'] = score
-                  context['source_faq_id'] = faq_id
-                  if not final_context_list:
-                       context['debug_similarity'] = {'top1': top1_sim, 'top2': top2_sim, 'gap': top1_sim - top2_sim}
-                  # --- <<< 추가 완료 <<< ---
-                  final_context_list.append(context)
-             else:
-                  logger.warning(f"Context not found for ranked FAQ ID: {faq_id}")
-
-        logger.info(f"Returning {len(final_context_list)} contexts for LLM.")
         return final_context_list
