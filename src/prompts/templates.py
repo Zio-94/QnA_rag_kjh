@@ -33,7 +33,21 @@ MAIN_ANSWER_DIRECT_SYSTEM_ADDENDUM = """
 답변은 최대 {max_answer_length}자 내외로 해주세요.
 """
 
+HISTORY_ANSWER_DIRECT_SYSTEM_ADDENDUM = """
+<FAQ_CONTEXT>
+{faq_context}
+</FAQ_CONTEXT>
 
+<HISTORY>
+{history}
+</HISTORY>
+
+사용자의 마지막 질문 "{user_query}"에 대해 답변해야 합니다.
+**중요:** 만약 사용자의 마지막 질문이 <HISTORY>의 내용과 직접적으로 이어진다면, <FAQ_CONTEXT>보다 <HISTORY>을 우선적으로 고려하여 답변하세요. 예를 들어, 이전 답변에 대한 설명을 요구하거나 관련된 추가 질문을 하는 경우가 해당됩니다.
+만약 사용자의 마지막 질문이 새로운 주제이거나 <HISTORY>과 관련성이 낮다면, <FAQ_CONTEXT>를 최우선으로 참고하여 답변하세요.
+컨텍스트에 관련 내용이 없다면 "제공된 정보만으로는 정확한 답변을 드리기 어렵습니다."라고 답변하세요.
+답변은 최대 {max_answer_length}자 내외로 해주세요.
+"""
 
 FOLLOW_UP_SYSTEM_ADDENDUM = """
 <FAQ_CONTEXT>
@@ -42,14 +56,31 @@ FOLLOW_UP_SYSTEM_ADDENDUM = """
 <USER_QUERY>{user_query}</USER_QUERY>
 <MAIN_ANSWER>{main_answer}</MAIN_ANSWER>
 
-위 대화 내용(사용자 질문, 검색된 FAQ 컨텍스트, 방금 생성된 메인 답변)을 바탕으로, 사용자가 **다음에 궁금해할 만한 관련 질문 2개**를 생성해주세요. 질문은 사용자의 이전 질문 의도와 답변 내용 모두와 관련성이 높아야 합니다. 결과는 반드시 다음 JSON 형식 배열로만 반환해주세요: {{"follow_ups": ["관련 질문 1?", "관련 질문 2?"]}} JSON 외의 다른 텍스트는 절대 포함하지 마세요.
-"""
+위 대화 내용을 바탕으로, 사용자가 다음에 궁금해할 만한 **후속 질문 2개**를 생성해주세요.
+
+반드시 다음 조건을 지켜주세요:
+
+1. 후속 질문은 FAQ_CONTEXT 안에 실제 존재하는 질문들만 조합하거나 의미적으로 변형한 형태여야 합니다.
+2. 질문은 사용자의 원래 질문 의도(관심 주제 흐름)를 유지하도록 자연스럽게 연결되어야 하며, 단순 키워드 일치는 피해주세요.
+3. 질문이 완전히 동떨어진 느낌을 주지 않도록, **의도 기반 유사도와 FAQ 내 존재 여부를 동시에 고려**해야 합니다.
+
+정답은 반드시 다음 JSON 형식 배열로 반환하세요:  
+{{"follow_ups": ["관련 질문 1?", "관련 질문 2?"]}}
+
+JSON 외의 텍스트는 절대 포함하지 마세요."""
 
 OFF_TOPIC_SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + """
-현재 대화는 '네이버 스마트스토어'와 관련된 내용만 다루어야 합니다. 사용자의 질문이 스마트스토어와 관련 없는 경우, 정중하게 안내하고 스마트스토어 관련 질문을 유도해야 합니다. 아래 형식으로 답변해주세요:
-"저는 스마트 스토어 FAQ를 위한 챗봇입니다. 스마트 스토어에 대한 질문을 부탁드립니다.
-- (스마트스토어 관련 제안 질문 1)
-- (스마트스토어 관련 제안 질문 2)"
+현재 대화는 '네이버 스마트스토어'와 관련된 내용만 다루어야 합니다.
+
+사용자의 질문이 스마트스토어와 직접 관련이 없더라도, 
+질문의 주제를 분석하여 스마트스토어와 연관된 주제로 연결해주는 방식으로 응답해야 합니다.
+
+아래 형식을 참고하여 답변해주세요:
+
+"저는 스마트스토어 FAQ를 위한 챗봇입니다. 스마트스토어에 대한 질문을 부탁드립니다.
+다만, 질문 주제를 참고하여 아래와 같은 관련 질문을 드려볼 수 있어요:
+- (사용자 질문을 스마트스토어 관점에서 리프레이즈한 제안 질문 1)
+- (리프레이즈한 제안 질문 2)"
 """
 
 # --- >>> 추가: 도메인 분류용 프롬프트 <<< ---
@@ -174,11 +205,20 @@ def build_prompt_messages(
     elif prompt_type == "OFF_TOPIC":
         system_content = OFF_TOPIC_SYSTEM_PROMPT
         user_content = f"다음 사용자 질문은 스마트스토어와 관련이 없습니다. 규칙에 따라 응답해주세요: \"{user_query}\""
-    # --- >>> 추가: 도메인 분류 프롬프트 <<< ---
+
     elif prompt_type == "DOMAIN_CLASSIFICATION":
          system_content = DOMAIN_CLASSIFICATION_SYSTEM_PROMPT
          user_content = DOMAIN_CLASSIFICATION_USER_PROMPT.format(query=user_query)
          history = [] # 분류 시에는 히스토리 불필요
+
+    elif prompt_type == "HISTORY_ANSWER_DIRECT":
+        system_content = BASE_SYSTEM_PROMPT + HISTORY_ANSWER_DIRECT_SYSTEM_ADDENDUM.format(
+            faq_context=context_formatted,
+            user_query=user_query,
+            max_answer_length=max_answer_len,
+            history=history
+        )
+        
     # --- <<< 추가 완료 <<< ---
     else:
         raise ValueError(f"Unknown prompt type: {prompt_type}")
