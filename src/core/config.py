@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # --- 모델 설정 ---
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIMENSIONS: Optional[int] = 512 # text-embedding-3용 차원 (None이면 기본값)
-    LLM_MODEL: str = "gpt-4o-mini"
+    LLM_MODEL: str = "gpt-o4-nano"
 
     # --- 데이터 경로 ---
     FAQ_DATA_PATH: str = "data/final_result.pkl" # 원본 데이터 경로
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     GENERATOR_TEMPERATURE: float = 0.7 # 답변 생성 온도
 
     # --- Guard 설정 ---
-    GUARD_CLASSIFIER_MODEL: str = "gpt-4o-mini" 
+    GUARD_CLASSIFIER_MODEL: str = "gpt-o4-nano" 
 
     # --- Tiered Logic Thresholds ---
     HIGH_THRESHOLD: float = 0.7   # 높은 유사도 기준 (직접 답변 유도)
@@ -54,7 +54,8 @@ class Settings(BaseSettings):
 
     # --- Memory 설정 ---
     CONTEXT_TURNS: int = 3 # 프롬프트에 포함할 최근 대화 턴 수
-    REDIS_TTL_SECONDS: int = 48 * 60 * 60 # Redis TTL (48시간)
+    REDIS_TTL_SECONDS: int = 12 * 60 * 60 # Redis TTL (48시간)
+    REDIS_URL: str = "redis://localhost:6379/0" # Redis URL
 
     # --- 앱 정보 ---
     APP_TITLE: str = "SmartStore FAQ Chatbot API"
