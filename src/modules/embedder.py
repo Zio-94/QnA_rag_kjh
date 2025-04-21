@@ -8,7 +8,6 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_i
 
 from src.core.config import get_settings
 
-settings = get_settings()
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +21,10 @@ retry_decorator = retry(
 
 class Embedder:
     """OpenAI 임베딩 API를 비동기적으로 호출하는 래퍼 클래스 (dimensions 지원)."""
-    def __init__(self, api_key: str, model_name: str):
+    def __init__(self, api_key: str, model_name: str, dimensions: Optional[int] = None):
         self.model_name = model_name
-        self.dimensions = settings.EMBEDDING_DIMENSIONS
-   
+        self.dimensions = dimensions
+
         try:
             self.client = AsyncOpenAI(api_key=api_key)
             logger.info(f"AsyncOpenAI client initialized for model: {self.model_name}")
